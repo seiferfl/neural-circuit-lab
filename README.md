@@ -1,4 +1,4 @@
-<img src="nn_brain.png" width="600"/>
+<img src="nn_brain.png" width="400"/>
 
 # neural-circuit-lab
 
