@@ -24,7 +24,24 @@ class Transformer(nn.Module):
         x = x + self.mlp(x)
         return self.unembed(x)
     
+class SimpleMLP(nn.Module):
+    """
+    Simplified version that is hopefully also grokking.
+    Consists of a learned embedding to d_model. Then the embedded vectors are concatenated to a n_ctx * d_model vector.
+    It follows an MLP layer without skip connection and a learned unembedding 
+    """
+    def __init__(self, d_model,d_vocab,n_ctx,act_type):
+        super().__init__()
+        self.embed = Embed(d_vocab=d_vocab,d_model=d_model)
+        self.mlp_without_ctx = MLP_without_ctx(d_model=d_model,d_mlp=4*d_model,n_ctx=n_ctx,act_type=act_type)
+        self.unembed = Unembed(d_vocab=d_vocab,d_model=d_model)
 
+
+    def forward(self,x):
+        x = self.embed(x)       #embed the tokens
+        x = einops.rearrange(x,"b p d -> b (p d)")       #concat the embedded vectores
+        x = self.mlp_without_ctx(x)         #MLP layer
+        return self.unembed(x)
     
 class Embed(nn.Module):
     """
@@ -99,7 +116,29 @@ class MLP(nn.Module):
 
         x = t.einsum("bpm,dm -> bpd",x,self.W_out)
         return x
+class MLP_without_ctx(nn.Module):
+    def __init__(self, d_model,d_mlp,n_ctx,act_type):
+        super().__init__()
+        self.d_in = d_model*n_ctx
+        self.W_in = nn.Parameter(t.randn(d_mlp,self.d_in)/np.sqrt(self.d_in))
+        self.b_in = nn.Parameter(t.zeros(d_mlp))
 
+        self.W_out = nn.Parameter(t.randn(d_model,d_mlp)/np.sqrt(d_model))
+        self.b_out = nn.Parameter(t.zeros(d_model))
+
+        self.act_type = act_type
+        assert act_type in ["ReLU","GeLU"]
+
+    def forward(self,x):
+        x = t.einsum("b d, m d -> b m",x,self.W_in) + self.b_in
+        if self.act_type == "ReLU":
+            x = F.relu(x)
+
+        elif self.act_type == "GeLU":
+            x = F.gelu(x)
+
+        x = t.einsum("b m , d m -> b d",x,self.W_out)
+        return x
     
 class Unembed(nn.Module):
     """
